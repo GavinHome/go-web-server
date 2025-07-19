@@ -1,6 +1,8 @@
 package main
 
 import (
+	"build-web-application-with-golang/session"
+	_ "build-web-application-with-golang/session/providers/memory"
 	"crypto/md5"
 	"fmt"
 	"html/template"
@@ -13,7 +15,16 @@ import (
 	"time"
 )
 
+var globalSessions *session.Manager
+
+// 然后在init函数中初始化
+func init() {
+	globalSessions, _ = session.NewManager("memory", "gosessionid", 3600)
+	go globalSessions.GC()
+}
+
 func sayhelloName(w http.ResponseWriter, r *http.Request) {
+	sess := globalSessions.SessionStart(w, r)
 	r.ParseForm()
 	fmt.Println(r.Form)
 	fmt.Println("path", r.URL.Path)
@@ -23,14 +34,22 @@ func sayhelloName(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("key:", k)
 		fmt.Println("val:", strings.Join(v, ""))
 	}
-	fmt.Fprintf(w, "Hello astaxie!")
+	// fmt.Fprintf(w, "Hello astaxie!")
+
+	if username := sess.Get("username"); username != nil {
+		fmt.Fprintf(w, "Hello %s !", username)
+	} else {
+		fmt.Fprintf(w, "Hello !")
+	}
 }
 
 func login(w http.ResponseWriter, r *http.Request) {
+	sess := globalSessions.SessionStart(w, r)
 	fmt.Println("method", r.Method)
 	if r.Method == "GET" {
 		t, _ := template.ParseFiles("login.gtpl")
-		log.Println(t.Execute(w, nil))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		log.Println("login: ", t.Execute(w, sess.Get("username")))
 	} else {
 		// r.ParseForm()
 		// fmt.Println("username:", r.Form["username"])
@@ -38,8 +57,31 @@ func login(w http.ResponseWriter, r *http.Request) {
 
 		fmt.Println("username:", r.FormValue("username"))
 		fmt.Println("password:", r.FormValue("password"))
+
+		sess.Set("username", r.FormValue("username"))
+		http.Redirect(w, r, "/", 302)
 	}
 }
+
+// func count(w http.ResponseWriter, r *http.Request) {
+// 	sess := globalSessions.SessionStart(w, r)
+// 	createtime := sess.Get("createtime")
+// 	if createtime == nil {
+// 		sess.Set("createtime", time.Now().Unix())
+// 	} else if (createtime.(int64) + 360) < (time.Now().Unix()) {
+// 		globalSessions.SessionDestroy(w, r)
+// 		sess = globalSessions.SessionStart(w, r)
+// 	}
+// 	ct := sess.Get("countnum")
+// 	if ct == nil {
+// 		sess.Set("countnum", 1)
+// 	} else {
+// 		sess.Set("countnum", (ct.(int) + 1))
+// 	}
+// 	t, _ := template.ParseFiles("count.gtpl")
+// 	w.Header().Set("Content-Type", "text/html")
+// 	t.Execute(w, sess.Get("countnum"))
+// }
 
 // 处理/upload 逻辑
 func upload(w http.ResponseWriter, r *http.Request) {
